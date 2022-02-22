@@ -55,7 +55,6 @@ color_dist = {
     'white': {'Lower': np.array([0, 0, 142]), 'Upper': np.array([237, 12, 255])},
 }
 
-
 def try_except(func):
     # try-except function. Usage: @try_except decorator
     def handler(*args, **kwargs):
@@ -266,7 +265,6 @@ class RobotForm(QWidget, Ui_Form):
             self.ep_battery = self.ep_robot.battery
             self.ep_chassis = self.ep_robot.chassis
             self.ep_camera = self.ep_robot.camera
-
             self.ep_led = self.ep_robot.led
             self.ep_vision = self.ep_robot.vision
             self.ep_blaster = self.ep_robot.blaster
@@ -288,21 +286,6 @@ class RobotForm(QWidget, Ui_Form):
         self.timer1.timeout.connect(self.visionfunction)
         self.timer1.start(10)
 
-    # 目标跟随
-    def start_follow_fun(self):
-        global IsFollow, IsFollowTennis
-        if IsFollow:
-            IsFollow = False
-            self.ep_chassis.drive_wheels(w1=0, w2=0, w3=0, w4=0)
-            self.pushButton_start_follow.setText("开始目标跟随")
-        else:
-            IsFollow = True
-            # self.ep_gimbal.move(pitch=-10, yaw=0).wait_for_completed(1)
-            self.pushButton_start_follow.setText("停止目标跟随")
-            if self.checkBox_tennis.isChecked():
-                IsFollowTennis = True
-            if self.checkBox_robot.isChecked():
-                IsFollowTennis = False
 
     def start_grip_tennis(self):
         global IsGripTenis, stop_sound_threads, zeroyaw
@@ -545,7 +528,7 @@ class RobotForm(QWidget, Ui_Form):
             # time.sleep(1)
             self.ep_gripper.open(power=50)
             time.sleep(1)
-            self.ep_chassis.drive_speed(x=-0.4, y=0, z=0)
+            self.ep_chassis.drive_speed(x=-0.3, y=0, z=0)
             time.sleep(0.5)
             self.ep_chassis.drive_speed(x=0, y=0, z=0)
             self.ep_arm.moveto(90, 30).wait_for_completed(timeout=2)
@@ -701,52 +684,6 @@ class RobotForm(QWidget, Ui_Form):
                         self.ep_chassis.drive_speed(x=speedx, y=0, z=speedy)
                 else:
                     self.ep_chassis.drive_speed(x=0, y=0, z=25)
-
-            # 开启目标跟随（网球）
-            if IsFollow:
-                if IsFollowTennis:
-                    low_hsv = (34, 102, 125)
-                    high_hsv = (60, 255, 255)
-                    frame_hsv = cv2.cvtColor(frame_hsv, cv2.COLOR_BGR2HSV)
-                    newimg = cv2.inRange(frame_hsv, lowerb=low_hsv, upperb=high_hsv)
-                    contours, hier = cv2.findContours(newimg, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-                    maxa = 0
-                    maxi = 0
-                    ballr = 62.5 / 2
-                    f = 310
-                    # 定义视野中心
-                    target_x, target_y = 320, 220
-                    for i in range(len(contours)):
-                        tmp = cv2.contourArea(contours[i])
-                        if tmp > maxa:
-                            maxa = tmp
-                            maxi = i
-                    if maxa < 200:
-                        speedx = 0
-                        speedy = 0
-                    else:
-                        # 在最大轮廓区域求最小闭包圆，获得圆心在图像区域中的位置坐标和半径
-                        (bx, by), radius = cv2.minEnclosingCircle(contours[maxi])
-                        center = (int(bx), int(by))
-                        print(center)
-                        radius = int(radius)
-                        img = cv2.circle(frame, center, radius, (0, 255, 0), 2)
-                        # 利用已知的焦距、图像中的球的半径以及实际球的大小，求网球到相机间的距离
-                        distance = f * ballr / radius
-                        print(distance)
-                        # 根据小球在图像中的位置，以视野中心点为目标，控制小球沿Y方向运动，使球保持于视野中心
-                        if abs(target_x - bx) < 20:
-                            speedy = 0
-                        else:
-                            speedy = -self.pid_user(0.2, target_x, bx)
-                        # 根据小球到相机的距离，控制小车是否拦截小球
-                        if distance < 500:
-                            speedx = 0
-                        else:
-                            speedx = -self.pid_user(0.001, 200, distance) / 2
-                    print(speedx, speedy)
-                    self.ep_chassis.drive_speed(x=speedx, y=0, z=speedy)
-            # 转为QImage对象
             self.image = QImage(
                 frame.data, width, height, bytesPerLine, QImage.Format_RGB888
             )
