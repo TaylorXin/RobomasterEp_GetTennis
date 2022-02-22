@@ -1,0 +1,6 @@
+<RCC>
+  <qresource prefix="icon">
+    <file>image/部门管理(黑).png</file>
+    <file>image/部门管理(白).png</file>
+  </qresource>
+</RCC>
