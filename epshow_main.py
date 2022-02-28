@@ -30,7 +30,6 @@ IsGetTenis = False
 IsScanningSound = True
 stop_sound_threads = False
 zeroyaw = 0
-fire_counter = 0
 led_status = 0
 gripper_status = ""
 first_tennis_x = 320
@@ -45,6 +44,7 @@ g = 211
 b = 15
 speed = 60
 rlspeed = 100
+fps = 35.0
 initBB = None
 color_dist = {
     'red': {'Lower': np.array([0, 58, 72]), 'Upper': np.array([7, 255, 160])},
@@ -247,6 +247,8 @@ class RobotForm(QWidget, Ui_Form):
             self.pushButton.clicked.connect(self.selectColor)
             self.pushButton_reset.clicked.connect(self.robot_reset)
             self.pushButton_grip_tennis.clicked.connect(self.start_grip_tennis)
+            self.doubleSpinBox_V.valueChanged.connect(self.update_speed)
+            self.doubleSpinBox_W.valueChanged.connect(self.update_speed)
 
             if IsInfantry:
                 self.ep_gimbal = self.ep_robot.gimbal
@@ -284,8 +286,13 @@ class RobotForm(QWidget, Ui_Form):
     def startcam(self):
         self.timer1 = QTimer()
         self.timer1.timeout.connect(self.visionfunction)
-        self.timer1.start(10)
+        self.timer1.start()
 
+    def update_speed(self):
+        global x_val,y_val,z_val
+        x_val = self.doubleSpinBox_V.value()
+        z_val = self.doubleSpinBox_W.value()
+        y_val = x_val
 
     def start_grip_tennis(self):
         global IsGripTenis, stop_sound_threads, zeroyaw
@@ -384,7 +391,7 @@ class RobotForm(QWidget, Ui_Form):
     def sub_tofdata_handler(self, sub_info):
         global distance
         distance = sub_info[0] / 10
-        tof_msg = "超声波距离：{0}厘米".format(distance)
+        tof_msg = "TOF距离：{0}厘米".format(distance)
         self.label_tof.setText(tof_msg)
 
     def sub_data_handler(self, sub_info):
@@ -421,22 +428,26 @@ class RobotForm(QWidget, Ui_Form):
         vgxyz_msg = "机器人速度: vgx:{0} vgy:{0} vgz:{0}".format(vgx)
         self.label_speed.setText(vgxyz_msg)
 
-    # 捕捉键盘事件，注意需要在控件中设置setFocus(),否则方向键和空格键无法捕捉
-    def keyPressEvent(self, event):
+    def keyPressEvent_task(self):
+        event = event_temp
         try:
             key = event.key()
             if key == Qt.Key_Up:
-                self.ep_arm.move(x=0, y=15).wait_for_completed(timeout=0.5)
-                time.sleep(0.1)
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_arm.move(x=0, y=15).wait_for_completed(timeout=0.5)
+                    time.sleep(0.1)
             elif key == Qt.Key_Down:
-                self.ep_arm.move(x=0, y=-15).wait_for_completed(timeout=0.5)
-                time.sleep(0.1)
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_arm.move(x=0, y=-15).wait_for_completed(timeout=0.5)
+                    time.sleep(0.1)
             elif key == Qt.Key_Right:
-                self.ep_arm.move(x=15, y=0).wait_for_completed(timeout=0.5)
-                time.sleep(0.1)
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_arm.move(x=15, y=0).wait_for_completed(timeout=0.5)
+                    time.sleep(0.1)
             elif key == Qt.Key_Left:
-                self.ep_arm.move(x=-15, y=0).wait_for_completed(timeout=0.5)
-                time.sleep(0.1)
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_arm.move(x=-15, y=0).wait_for_completed(timeout=0.5)
+                    time.sleep(0.1)
             elif key == Qt.Key_E:
                 self.ep_chassis.drive_speed(x=0, y=0, z=z_val, timeout=5)
                 time.sleep(0.1)
@@ -458,13 +469,15 @@ class RobotForm(QWidget, Ui_Form):
             elif key == Qt.Key_Space:
                 self.ep_chassis.drive_wheels(w1=0, w2=0, w3=0, w4=0)
             elif key == Qt.Key_Z:
-                self.ep_gripper.open(power=50)
-                time.sleep(0.2)
-                self.ep_gripper.pause()
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_gripper.open(power=50)
+                    time.sleep(0.2)
+                    self.ep_gripper.pause()
             elif key == Qt.Key_X:
-                self.ep_gripper.close(power=50)
-                time.sleep(0.2)
-                self.ep_gripper.pause()
+                if not self.ep_robot.action_dispatcher.has_in_progress_actions:
+                    self.ep_gripper.close(power=50)
+                    time.sleep(0.2)
+                    self.ep_gripper.pause()
             elif key == Qt.Key_L:
                 self.ep_gimbal.drive_speed(pitch_speed=0, yaw_speed=10)
                 time.sleep(0.2)
@@ -484,14 +497,29 @@ class RobotForm(QWidget, Ui_Form):
         except Exception as e:
             print(e)
 
+    # 捕捉键盘事件，注意需要在控件中设置setFocus(),否则方向键和空格键无法捕捉
+    def keyPressEvent(self, event):
+        global event_temp
+        event_temp = event
+        thread_keyPress = Thread(target=self.keyPressEvent_task, daemon=True)
+        thread_keyPress.start()
+
+
     # 键盘释放事件，发送停止运行指令
     def keyReleaseEvent(self, event):
-        # pass
-        if event.isAutoRepeat():
-            event.ignore()
+        global event_release_temp
+        event_release_temp = event
+        thread_keyPress = Thread(target=self.keyReleaseEvent_task, daemon=True)
+        thread_keyPress.start()
+
+    def keyReleaseEvent_task(self):
+        if event_release_temp.isAutoRepeat():
+            print("event.ignore")
+            event_release_temp.ignore()
         else:
-            # print("stop move")
+            print("stop move")
             self.ep_chassis.drive_wheels(w1=0, w2=0, w3=0, w4=0)
+
 
     def pid_user(self, k, setv, getv):
         return k * (setv - getv)
@@ -562,10 +590,11 @@ class RobotForm(QWidget, Ui_Form):
 
     def visionfunction(self):
         '''完成视觉检测各个子功能'''
-        global fps, fire_counter, IsFollow, IsFollowTennis, IsGripTenis, IsGetTenis, \
+        global fps, IsFollow, IsFollowTennis, IsGripTenis, IsGetTenis, \
             first_tennis_x, stop_sound_threads, IsScanningSound
         try:
-            frame = self.ep_camera.read_cv2_image()
+            t1 = cv2.getTickCount()
+            frame = self.ep_camera.read_cv2_image(timeout=1, strategy="newest")
             frame_hsv = frame.copy()
             height, width, bytesPerComponent = frame.shape
             bytesPerLine = bytesPerComponent * width
@@ -654,10 +683,7 @@ class RobotForm(QWidget, Ui_Form):
                         # print("EP正在执行的任务", self.action.target)
                         IsGripTenis = False
                         self.pushButton_grip_tennis.setText("开始抓取")
-                        try:
-                            self.grip_tennis_thread()
-                        except Exception as e:
-                            print(e)
+                        self.grip_tennis_thread()
                     else:
                         # print("输出速度：", speedx, speedy)
                         self.ep_chassis.drive_speed(x=speedx, y=0, z=speedy)
@@ -677,7 +703,6 @@ class RobotForm(QWidget, Ui_Form):
                         speedx = 0
                     else:
                         speedx = self.pid_user(0.2, target_height, by) / 50
-                    print(speedx, speedy)
                     if speedx == 0 and speedy == 0:
                         self.realease_tennis_thread()
                     else:
@@ -690,9 +715,18 @@ class RobotForm(QWidget, Ui_Form):
             self.label_cam.setPixmap(QPixmap.fromImage(self.image))
             self.label_cam.setAlignment(Qt.AlignCenter)
             self.label_cam.setScaledContents(True)
+            t2 = cv2.getTickCount()
+            time_r = (t2 - t1) / cv2.getTickFrequency()
+            # print("time_r",time_r)
+            sleeptime = 1 / fps - time_r
+            if sleeptime > 0:
+                # print("sleeptime:",sleeptime)
+                time.sleep(sleeptime)
+            # fps = 1.0 / time_r
+            # print("fps:",fps)
         except Exception as e:
             print("！！！！！视频浏览错误！！！！！")
-            print(e)
+            print("错误原因：",e)
             # self.stopshow1()
             self.label_cam.clear()
             self.label_cam.setText("等待画面重新连接")
